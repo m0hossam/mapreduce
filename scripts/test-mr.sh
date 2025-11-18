@@ -16,17 +16,17 @@ cd mr-tmp || exit 1
 rm -f mr-*
 
 # make sure software is freshly built.
-(cd ../../apps/wc && go build $RACE -buildmode=plugin wc.go) || exit 1
-(cd ../../apps/indexer && go build $RACE -buildmode=plugin indexer.go) || exit 1
-(cd ../../apps/mtiming && go build $RACE -buildmode=plugin mtiming.go) || exit 1
-(cd ../../apps/rtiming && go build $RACE -buildmode=plugin rtiming.go) || exit 1
-(cd ../../apps/jobcount && go build $RACE -buildmode=plugin jobcount.go) || exit 1
-(cd ../../apps/early_exit && go build $RACE -buildmode=plugin early_exit.go) || exit 1
-(cd ../../apps/crash && go build $RACE -buildmode=plugin crash.go) || exit 1
-(cd ../../apps/nocrash && go build $RACE -buildmode=plugin nocrash.go) || exit 1
-(cd ../../coordinator && go build $RACE mrcoordinator.go) || exit 1
-(cd ../../worker && go build $RACE mrworker.go) || exit 1
-(cd ../../sequential && go build $RACE mrsequential.go) || exit 1
+(cd ../../cmd/apps/wc && go build $RACE -buildmode=plugin wc.go) || exit 1
+(cd ../../cmd/apps/indexer && go build $RACE -buildmode=plugin indexer.go) || exit 1
+(cd ../../cmd/apps/mtiming && go build $RACE -buildmode=plugin mtiming.go) || exit 1
+(cd ../../cmd/apps/rtiming && go build $RACE -buildmode=plugin rtiming.go) || exit 1
+(cd ../../cmd/apps/jobcount && go build $RACE -buildmode=plugin jobcount.go) || exit 1
+(cd ../../cmd/apps/early_exit && go build $RACE -buildmode=plugin early_exit.go) || exit 1
+(cd ../../cmd/apps/crash && go build $RACE -buildmode=plugin crash.go) || exit 1
+(cd ../../cmd/apps/nocrash && go build $RACE -buildmode=plugin nocrash.go) || exit 1
+(cd ../../cmd/coordinator && go build $RACE mrcoordinator.go) || exit 1
+(cd ../../cmd/worker && go build $RACE mrworker.go) || exit 1
+(cd ../../cmd/sequential && go build $RACE mrsequential.go) || exit 1
 
 failed_any=0
 
@@ -34,22 +34,22 @@ failed_any=0
 # first word-count
 
 # generate the correct output
-../../sequential/mrsequential ../../apps/wc/wc.so ../../../../datasets/project-gutenberg/pg*txt || exit 1
+../../cmd/sequential/mrsequential ../../cmd/apps/wc/wc.so ../../data/pg*txt || exit 1
 sort mr-out-0 > mr-correct-wc.txt
 rm -f mr-out*
 
 echo '***' Starting wc test.
 
-timeout -k 2s 180s ../../coordinator/mrcoordinator ../../../../datasets/project-gutenberg/pg*txt &
+timeout -k 2s 180s ../../cmd/coordinator/mrcoordinator ../../data/pg*txt &
 pid=$!
 
 # give the coordinator time to create the sockets.
 sleep 1
 
 # start multiple workers.
-timeout -k 2s 180s ../../worker/mrworker ../../apps/wc/wc.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/wc/wc.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/wc/wc.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/wc/wc.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/wc/wc.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/wc/wc.so &
 
 # wait for the coordinator to exit.
 wait $pid
@@ -74,18 +74,18 @@ wait
 rm -f mr-*
 
 # generate the correct output
-../../sequential/mrsequential ../../apps/indexer/indexer.so ../../../../datasets/project-gutenberg/pg*txt || exit 1
+../../cmd/sequential/mrsequential ../../cmd/apps/indexer/indexer.so ../../data/pg*txt || exit 1
 sort mr-out-0 > mr-correct-indexer.txt
 rm -f mr-out*
 
 echo '***' Starting indexer test.
 
-timeout -k 2s 180s ../../coordinator/mrcoordinator ../../../../datasets/project-gutenberg/pg*txt &
+timeout -k 2s 180s ../../cmd/coordinator/mrcoordinator ../../data/pg*txt &
 sleep 1
 
 # start multiple workers
-timeout -k 2s 180s ../../worker/mrworker ../../apps/indexer/indexer.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/indexer/indexer.so
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/indexer/indexer.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/indexer/indexer.so
 
 sort mr-out* | grep . > mr-indexer-all
 if cmp mr-indexer-all mr-correct-indexer.txt
@@ -104,11 +104,11 @@ echo '***' Starting map parallelism test.
 
 rm -f mr-*
 
-timeout -k 2s 180s ../../coordinator/mrcoordinator ../../../../datasets/project-gutenberg/pg*txt &
+timeout -k 2s 180s ../../cmd/coordinator/mrcoordinator ../../data/pg*txt &
 sleep 1
 
-timeout -k 2s 180s ../../worker/mrworker ../../apps/mtiming/mtiming.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/mtiming/mtiming.so
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/mtiming/mtiming.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/mtiming/mtiming.so
 
 NT=`cat mr-out* | grep '^times-' | wc -l | sed 's/ //g'`
 if [ "$NT" != "2" ]
@@ -135,11 +135,11 @@ echo '***' Starting reduce parallelism test.
 
 rm -f mr-*
 
-timeout -k 2s 180s ../../coordinator/mrcoordinator ../../../../datasets/project-gutenberg/pg*txt &
+timeout -k 2s 180s ../../cmd/coordinator/mrcoordinator ../../data/pg*txt &
 sleep 1
 
-timeout -k 2s 180s ../../worker/mrworker ../../apps/rtiming/rtiming.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/rtiming/rtiming.so
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/rtiming/rtiming.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/rtiming/rtiming.so
 
 NT=`cat mr-out* | grep '^[a-z] 2' | wc -l | sed 's/ //g'`
 if [ "$NT" -lt "2" ]
@@ -158,13 +158,13 @@ echo '***' Starting job count test.
 
 rm -f mr-*
 
-timeout -k 2s 180s ../../coordinator/mrcoordinator ../../../../datasets/project-gutenberg/pg*txt &
+timeout -k 2s 180s ../../cmd/coordinator/mrcoordinator ../../data/pg*txt &
 sleep 1
 
-timeout -k 2s 180s ../../worker/mrworker ../../apps/jobcount/jobcount.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/jobcount/jobcount.so
-timeout -k 2s 180s ../../worker/mrworker ../../apps/jobcount/jobcount.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/jobcount/jobcount.so
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/jobcount/jobcount.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/jobcount/jobcount.so
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/jobcount/jobcount.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/jobcount/jobcount.so
 
 NT=`cat mr-out* | awk '{print $2}'`
 if [ "0$NT" -ne "8" ]
@@ -185,15 +185,15 @@ rm -f mr-*
 
 echo '***' Starting early exit test.
 
-timeout -k 2s 180s ../../coordinator/mrcoordinator ../../../../datasets/project-gutenberg/pg*txt &
+timeout -k 2s 180s ../../cmd/coordinator/mrcoordinator ../../data/pg*txt &
 
 # give the coordinator time to create the sockets.
 sleep 1
 
 # start multiple workers.
-timeout -k 2s 180s ../../worker/mrworker ../../apps/early_exit/early_exit.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/early_exit/early_exit.so &
-timeout -k 2s 180s ../../worker/mrworker ../../apps/early_exit/early_exit.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/early_exit/early_exit.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/early_exit/early_exit.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/early_exit/early_exit.so &
 
 # wait for any of the coord or workers to exit
 # `jobs` ensures that any completed old processes from other tests
@@ -234,35 +234,35 @@ rm -f mr-*
 echo '***' Starting crash test.
 
 # generate the correct output
-../../sequential/mrsequential ../../apps/nocrash/nocrash.so ../../../../datasets/project-gutenberg/pg*txt || exit 1
+../../cmd/sequential/mrsequential ../../cmd/apps/nocrash/nocrash.so ../../data/pg*txt || exit 1
 sort mr-out-0 > mr-correct-crash.txt
 rm -f mr-out*
 
 rm -f mr-done
-(timeout -k 2s 180s ../../coordinator/mrcoordinator ../../../../datasets/project-gutenberg/pg*txt ; touch mr-done ) &
+(timeout -k 2s 180s ../../cmd/coordinator/mrcoordinator ../../data/pg*txt ; touch mr-done ) &
 sleep 1
 
 # start multiple workers
-timeout -k 2s 180s ../../worker/mrworker ../../apps/crash/crash.so &
+timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/crash/crash.so &
 
 # mimic rpc.go's coordinatorSock()
 SOCKNAME=/var/tmp/824-mr-`id -u`
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    timeout -k 2s 180s ../../worker/mrworker ../../apps/crash/crash.so
+    timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/crash/crash.so
     sleep 1
   done ) &
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    timeout -k 2s 180s ../../worker/mrworker ../../apps/crash/crash.so
+    timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/crash/crash.so
     sleep 1
   done ) &
 
 while [ -e $SOCKNAME -a ! -f mr-done ]
 do
-  timeout -k 2s 180s ../../worker/mrworker ../../apps/crash/crash.so
+  timeout -k 2s 180s ../../cmd/worker/mrworker ../../cmd/apps/crash/crash.so
   sleep 1
 done
 
