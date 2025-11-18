@@ -26,7 +26,7 @@ func Map(document string, value string) (res []mr.KeyValue) {
 		m[w] = true
 	}
 	for w := range m {
-		kv := mr.KeyValue{w, document}
+		kv := mr.KeyValue{Key: w, Value: document}
 		res = append(res, kv)
 	}
 	return

@@ -10,7 +10,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
@@ -26,16 +25,16 @@ func Map(filename string, contents string) []mr.KeyValue {
 	me := os.Getpid()
 	f := fmt.Sprintf("mr-worker-jobcount-%d-%d", me, count)
 	count++
-	err := ioutil.WriteFile(f, []byte("x"), 0666)
+	err := os.WriteFile(f, []byte("x"), 0666)
 	if err != nil {
 		panic(err)
 	}
 	time.Sleep(time.Duration(2000+rand.Intn(3000)) * time.Millisecond)
-	return []mr.KeyValue{mr.KeyValue{"a", "x"}}
+	return []mr.KeyValue{{Key: "a", Value: "x"}}
 }
 
 func Reduce(key string, values []string) string {
-	files, err := ioutil.ReadDir(".")
+	files, err := os.ReadDir(".")
 	if err != nil {
 		panic(err)
 	}
