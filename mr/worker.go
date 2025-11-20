@@ -1,10 +1,15 @@
 package mr
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log"
 	"net/rpc"
+	"os"
+	"slices"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -25,37 +30,167 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
+	// Try calling RequestTask periodically until you get a task or exit
+	taskArgs := TaskArgs{}
+	taskArgs.WorkerID = os.Getpid()
+	taskReply := TaskReply{}
+	intermediateFiles := make([]string, 0)
+	taskDone := false
+	for !taskDone {
+		if !call("Coordinator.RequestTask", &taskArgs, &taskReply) {
+			log.Fatal("Encountered error while requesting task from coordinator")
+		}
 
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
+		switch taskReply.TaskType {
+		case mapTask:
+			intermediateFiles = executeMap(mapf, &taskReply)
+			taskDone = true
+		case reduceTask:
+			executeReduce(reducef, &taskReply)
+			taskDone = true
+		case waitTask:
+			time.Sleep(500 * time.Second)
+		case exitTask:
+			return
+		default:
+			log.Fatal("Received unknown task type from coordinator")
+		}
+	}
 
+	// Call TaskDone
+	doneArgs := DoneArgs{}
+	doneArgs.TaskID = taskReply.TaskID
+	doneArgs.TaskType = taskReply.TaskType
+	doneArgs.IntermediateFileNames = intermediateFiles
+	doneReply := DoneReply{}
+	call("Coordinator.TaskDone", &doneArgs, &doneReply) // exit without checking if this RPC called succeeded
 }
 
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func CallExample() {
+// executes the map task and returns intermediate file names
+func executeMap(mapf func(string, string) []KeyValue, taskReply *TaskReply) []string {
+	// Open and read the input file:
+	file, err := os.Open(taskReply.MapFileName)
+	if err != nil {
+		log.Fatalf("cannot open %v", taskReply.MapFileName)
+	}
+	content, err := io.ReadAll(file)
+	if err != nil {
+		log.Fatalf("cannot read %v", taskReply.MapFileName)
+	}
+	file.Close()
 
-	// declare an argument structure.
-	args := ExampleArgs{}
+	// Map input file contents into KV pairs:
+	kva := mapf(taskReply.MapFileName, string(content))
 
-	// fill in the argument(s).
-	args.X = 99
+	// Partition KV pairs into nReduce arrays for nReduce reduce-tasks:
+	buckets := make([][]KeyValue, taskReply.NReduce)
+	for _, kv := range kva {
+		reduceID := ihash(kv.Key) % taskReply.NReduce
+		buckets[reduceID] = append(buckets[reduceID], kv)
+	}
 
-	// declare a reply structure.
-	reply := ExampleReply{}
+	// Keep track of intermediate file names to be sent to the Coordinator:
+	intermediateFileNames := make([]string, 0)
 
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
-	ok := call("Coordinator.Example", &args, &reply)
-	if ok {
-		// reply.Y should be 100.
-		fmt.Printf("reply.Y %v\n", reply.Y)
-	} else {
-		fmt.Printf("call failed!\n")
+	// Save each partition of KV pairs to an intermediate file on disk:
+	for i := 0; i < taskReply.NReduce; i++ {
+		// Create a temporary file to avoid dirty reads of partially written files:
+		tempFile, err := os.CreateTemp("", "mr-tmp-*") // "*" will be replaced by a randomly generated string
+		if err != nil {
+			log.Fatalf("could not create temp file: %v", err)
+		}
+
+		// Encode the KV pairs into JSON:
+		enc := json.NewEncoder(tempFile)
+		for _, kv := range buckets[i] {
+			if err := enc.Encode(&kv); err != nil {
+				log.Fatalf("could not encode json: %v", err)
+			}
+		}
+		tempFile.Close()
+
+		// Rename the temp file to its intended name (os.Rename() is atomic on Unix in the same filesystem):
+		finalName := fmt.Sprintf("mr-%d-%d", taskReply.TaskID, i)
+		if err := os.Rename(tempFile.Name(), finalName); err != nil {
+			log.Fatalf("could not rename file: %v", err)
+		}
+
+		intermediateFileNames = append(intermediateFileNames, finalName)
+	}
+	return intermediateFileNames
+}
+
+// executes the reduce task
+func executeReduce(reducef func(string, []string) string, taskReply *TaskReply) {
+	kva := make([]KeyValue, 0)
+	// Open and read all input files:
+	for _, filename := range taskReply.ReduceFileNames {
+		// Open file:
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Fatalf("cannot open %v", filename)
+		}
+
+		// Decode the KV pairs in the file from JSON and append them to the KV array:
+		dec := json.NewDecoder(file)
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				if err == io.EOF {
+					break
+				}
+				log.Fatalf("could not decode json: %v", err)
+			}
+			kva = append(kva, kv)
+		}
+
+		file.Close()
+	}
+
+	// Sorts all KV pairs by key (so that all occurrences of the same key are grouped together):
+	slices.SortFunc(kva, func(a, b KeyValue) int {
+		if a.Key < b.Key {
+			return -1
+		}
+		if a.Key > b.Key {
+			return 1
+		}
+		return 0
+	})
+
+	// Open temp output file:
+	tempFile, err := os.CreateTemp("", "mr-tmp-*") // "*" will be replaced by a randomly generated string
+	if err != nil {
+		log.Fatalf("could not create temp file: %v", err)
+	}
+
+	// Write keys and their reduced values to the temp output file:
+	i := 0
+	for i < len(kva) {
+		// Group all values associated with kva[i].Key:
+		j := i + 1
+		for j < len(kva) && kva[j].Key == kva[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, kva[k].Value)
+		}
+
+		// Reduce the values into one value:
+		finalv := reducef(kva[i].Key, values)
+
+		// Output the key ands it final value to the temp output file:
+		fmt.Fprintf(tempFile, "%v %v\n", kva[i].Key, finalv)
+
+		// Advance i to the next key:
+		i = j
+	}
+
+	// Atomically rename the temp output file:
+	finalName := fmt.Sprintf("mr-out-%d", taskReply.TaskID)
+	if err := os.Rename(tempFile.Name(), finalName); err != nil {
+		log.Fatalf("could not rename file: %v", err)
 	}
 }
 
