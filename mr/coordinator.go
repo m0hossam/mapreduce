@@ -99,6 +99,7 @@ func (c *Coordinator) TaskDone(args *DoneArgs, reply *DoneReply) error {
 			c.startReduce()
 		}
 	}
+
 	if args.TaskType == reduceTask {
 		t, ok := c.tasks["reduce-"+strconv.Itoa(args.TaskID)]
 		if !ok {
@@ -107,11 +108,15 @@ func (c *Coordinator) TaskDone(args *DoneArgs, reply *DoneReply) error {
 		t.state = completedTask
 		c.nReduceDone++
 	}
+
+	// All tasks done:
 	if c.nMapDone == c.nMap && c.nReduceDone == c.nReduce {
+		reply.Exit = true
 		c.done = true
+		return nil
 	}
 
-	reply.Exit = true
+	reply.Exit = false // there are still remaining tasks
 	return nil
 }
 
@@ -167,6 +172,8 @@ func (c *Coordinator) startReduce() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.done
 }
 

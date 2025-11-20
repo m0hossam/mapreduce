@@ -30,40 +30,46 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Try calling RequestTask periodically until you get a task or exit
-	taskArgs := TaskArgs{}
-	taskArgs.WorkerID = os.Getpid()
-	taskReply := TaskReply{}
-	intermediateFiles := make([]string, 0)
-	taskDone := false
-	for !taskDone {
-		if !call("Coordinator.RequestTask", &taskArgs, &taskReply) {
-			log.Fatal("Encountered error while requesting task from coordinator")
+	for {
+		// Try calling RequestTask periodically until you get a task or exit:
+		taskArgs := TaskArgs{}
+		taskArgs.WorkerID = os.Getpid()
+		taskReply := TaskReply{}
+		intermediateFiles := make([]string, 0)
+		taskDone := false
+		for !taskDone {
+			if !call("Coordinator.RequestTask", &taskArgs, &taskReply) {
+				log.Fatal("Encountered error while requesting task from coordinator")
+			}
+
+			switch taskReply.TaskType {
+			case mapTask:
+				intermediateFiles = executeMap(mapf, &taskReply)
+				taskDone = true
+			case reduceTask:
+				executeReduce(reducef, &taskReply)
+				taskDone = true
+			case waitTask:
+				time.Sleep(500 * time.Millisecond)
+			case exitTask:
+				return
+			default:
+				log.Fatal("Received unknown task type from coordinator")
+			}
 		}
 
-		switch taskReply.TaskType {
-		case mapTask:
-			intermediateFiles = executeMap(mapf, &taskReply)
-			taskDone = true
-		case reduceTask:
-			executeReduce(reducef, &taskReply)
-			taskDone = true
-		case waitTask:
-			time.Sleep(500 * time.Second)
-		case exitTask:
-			return
-		default:
-			log.Fatal("Received unknown task type from coordinator")
+		// Call TaskDone:
+		doneArgs := DoneArgs{}
+		doneArgs.TaskID = taskReply.TaskID
+		doneArgs.TaskType = taskReply.TaskType
+		doneArgs.IntermediateFileNames = intermediateFiles
+		doneReply := DoneReply{}
+		if ok := call("Coordinator.TaskDone", &doneArgs, &doneReply); ok {
+			if doneReply.Exit {
+				return // Job is done
+			}
 		}
 	}
-
-	// Call TaskDone
-	doneArgs := DoneArgs{}
-	doneArgs.TaskID = taskReply.TaskID
-	doneArgs.TaskType = taskReply.TaskType
-	doneArgs.IntermediateFileNames = intermediateFiles
-	doneReply := DoneReply{}
-	call("Coordinator.TaskDone", &doneArgs, &doneReply) // exit without checking if this RPC called succeeded
 }
 
 // executes the map task and returns intermediate file names
