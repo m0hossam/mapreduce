@@ -30,10 +30,12 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
+	workerID := os.Getpid()
+
 	for {
 		// Try calling RequestTask periodically until you get a task or exit:
 		taskArgs := TaskArgs{}
-		taskArgs.WorkerID = os.Getpid()
+		taskArgs.WorkerID = workerID
 		taskReply := TaskReply{}
 		intermediateFiles := make([]string, 0)
 		taskDone := false
@@ -60,6 +62,7 @@ func Worker(mapf func(string, string) []KeyValue,
 
 		// Call TaskDone:
 		doneArgs := DoneArgs{}
+		doneArgs.WorkerID = workerID
 		doneArgs.TaskID = taskReply.TaskID
 		doneArgs.TaskType = taskReply.TaskType
 		doneArgs.IntermediateFileNames = intermediateFiles

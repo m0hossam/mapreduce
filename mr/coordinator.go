@@ -90,6 +90,15 @@ func (c *Coordinator) TaskDone(args *DoneArgs, reply *DoneReply) error {
 		if !ok {
 			return errors.New("task not found")
 		}
+
+		// Task must be running and the calling worker ID must be matching
+		// Otherwise, the calling worker was marked as failed
+		// And the task was reset to idle and possibly given to another worker
+		if t.workerID != args.WorkerID || t.state != runningTask {
+			reply.Exit = false
+			return nil
+		}
+
 		t.state = completedTask
 		c.nMapDone++
 		for _, f := range args.IntermediateFileNames {
@@ -105,6 +114,15 @@ func (c *Coordinator) TaskDone(args *DoneArgs, reply *DoneReply) error {
 		if !ok {
 			return errors.New("task not found")
 		}
+
+		// Task must be running and the calling worker ID must be matching
+		// Otherwise, the calling worker was marked as failed
+		// And the task was reset to idle and possibly given to another worker
+		if t.workerID != args.WorkerID || t.state != runningTask {
+			reply.Exit = false
+			return nil
+		}
+
 		t.state = completedTask
 		c.nReduceDone++
 	}

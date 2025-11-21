@@ -14,6 +14,7 @@ import (
 // Add your RPC definitions here.
 
 type DoneArgs struct {
+	WorkerID              int
 	TaskID                int
 	TaskType              int
 	IntermediateFileNames []string
